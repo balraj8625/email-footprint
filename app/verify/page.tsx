@@ -115,9 +115,6 @@ function VerifyContent() {
           <p className="text-xs font-semibold text-brand-text font-body text-center">
             Enter your 6-digit code
           </p>
-          <p className="text-[11px] text-brand-sub text-center font-mono">
-            Hint: use <code className="bg-brand-bg px-1.5 py-0.5 rounded text-brand-indigo">123456</code> for demo
-          </p>
         </div>
 
         <VerificationInput

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+import { NextResponse } from "next/server";
+import { validateEmail } from "@/lib/utils";
+import { otpStore, OTP_CONFIG } from "@/lib/otp-store";
 
 const MOCK_ACCOUNTS = [
   {
@@ -41,27 +41,93 @@ const MOCK_ACCOUNTS = [
   },
 ];
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { email, code } = body;
+    const { email: rawEmail, code: rawCode } = body;
 
-    if (!email || !code) {
+    if (!rawEmail || !rawCode) {
       return NextResponse.json(
         { error: "missing_fields", message: "Email and verification code are required." },
         { status: 400 }
       );
     }
 
-    await sleep(700 + Math.random() * 400);
+    const email = String(rawEmail).trim().toLowerCase();
+    const code = String(rawCode).trim();
 
-    // Mock: code 123456 always succeeds; anything else fails
-    if (String(code).trim() !== "123456") {
+    if (!validateEmail(email)) {
       return NextResponse.json(
-        { error: "invalid_code", message: "That code is incorrect. Please try again." },
+        { error: "invalid_email", message: "A valid email is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!/^\d{6}$/.test(code)) {
+      return NextResponse.json(
+        { error: "invalid_format", message: "Verification code must be 6 digits." },
+        { status: 400 }
+      );
+    }
+
+    const storedOtp = await otpStore.get(email);
+
+    if (!storedOtp) {
+      return NextResponse.json(
+        { error: "otp_not_found", message: "No verification code requested or it has expired. Please request a new code." },
+        { status: 400 }
+      );
+    }
+
+    const now = Date.now();
+
+    // Check expiration
+    if (now > storedOtp.expiresAt) {
+      await otpStore.delete(email);
+      return NextResponse.json(
+        { error: "otp_expired", message: "Verification code has expired. Please request a new code." },
+        { status: 400 }
+      );
+    }
+
+    // Check maximum failed attempts
+    if (storedOtp.attempts >= OTP_CONFIG.MAX_ATTEMPTS) {
+      await otpStore.delete(email);
+      return NextResponse.json(
+        {
+          error: "max_attempts_exceeded",
+          message: "Too many failed attempts. This verification code has been invalidated. Please request a new one.",
+        },
+        { status: 429 }
+      );
+    }
+
+    // Verify code
+    if (storedOtp.code !== code) {
+      storedOtp.attempts += 1;
+      if (storedOtp.attempts >= OTP_CONFIG.MAX_ATTEMPTS) {
+        await otpStore.delete(email);
+        return NextResponse.json(
+          {
+            error: "max_attempts_exceeded",
+            message: "Too many failed attempts. This verification code has been invalidated. Please request a new one.",
+          },
+          { status: 429 }
+        );
+      }
+      await otpStore.set(email, storedOtp);
+      const remaining = OTP_CONFIG.MAX_ATTEMPTS - storedOtp.attempts;
+      return NextResponse.json(
+        {
+          error: "invalid_code",
+          message: `That code is incorrect. Please try again (${remaining} attempt${remaining === 1 ? "" : "s"} remaining).`,
+        },
         { status: 401 }
       );
     }
+
+    // Successful verification -> invalidate OTP
+    await otpStore.delete(email);
 
     return NextResponse.json({
       status: "ok",
