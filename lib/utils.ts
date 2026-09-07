@@ -63,11 +63,11 @@ interface SessionData {
 
 export function saveSession(data: Partial<SessionData>) {
   if (typeof window === "undefined") return;
-  const existing = loadSession() ?? {};
+  const existing = loadSession();
   const merged: SessionData = {
     ...existing,
     ...data,
-    email: data.email ?? existing.email ?? "",
+    email: data.email ?? existing?.email ?? "",
     ts: Date.now(),
   };
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(merged));
