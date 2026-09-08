@@ -9,7 +9,6 @@ function createMockRequest(url: string): Request {
 describe("GET /api/lookup", () => {
   beforeEach(() => {
     jest.resetModules();
-    process.env = { ...originalEnv, HIBP_API_KEY: "test-api-key" };
     // @ts-expect-error mock fetch
     global.fetch = jest.fn();
   });
@@ -32,26 +31,17 @@ describe("GET /api/lookup", () => {
     expect(resInvalid.status).toBe(400);
   });
 
-  it("returns 500 if HIBP_API_KEY is not configured", async () => {
-    delete process.env.HIBP_API_KEY;
-    const req = createMockRequest("http://localhost:3000/api/lookup?email=test@example.com");
-    const res = await GET(req);
-    expect(res.status).toBe(500);
-
-    const json = await res.json();
-    expect(json.error).toBe("api_key_missing");
-  });
-
-  it("returns 200 with breach count and hints when breaches are found (200 OK from HIBP)", async () => {
-    const mockBreaches = [
-      { Name: "LinkedIn", Domain: "linkedin.com", DataClasses: ["Email addresses", "Passwords"] },
-      { Name: "Adobe", Domain: "adobe.com", DataClasses: ["Email addresses", "Password hints"] },
-    ];
+  it("returns 200 with breach count and hints when breaches are found (200 OK from XposedOrNot)", async () => {
+    const mockResponse = {
+      status: "success",
+      breaches: [["LinkedIn", "Adobe"]],
+      email: "test@example.com",
+    };
 
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => mockBreaches,
+      json: async () => mockResponse,
     });
 
     const req = createMockRequest("http://localhost:3000/api/lookup?email=TEST@example.com ");
@@ -71,17 +61,16 @@ describe("GET /api/lookup", () => {
     );
 
     expect(global.fetch).toHaveBeenCalledWith(
-      "https://haveibeenpwned.com/api/v3/breachedaccount/test%40example.com?truncateResponse=false",
+      "https://api.xposedornot.com/v1/check-email/test%40example.com",
       expect.objectContaining({
         headers: {
-          "hibp-api-key": "test-api-key",
           "user-agent": "EmailFootprint-App/1.0",
         },
       })
     );
   });
 
-  it("returns 200 with 0 breach count when no breach is found (404 from HIBP)", async () => {
+  it("returns 200 with 0 breach count when 404 is returned from provider", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
       status: 404,
@@ -97,7 +86,24 @@ describe("GET /api/lookup", () => {
     expect(json.hints).toEqual([]);
   });
 
-  it("returns 429 when rate limited by HIBP", async () => {
+  it("returns 200 with 0 breach count when provider returns 200 with Not found error payload", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ Error: "Not found", email: null }),
+    });
+
+    const req = createMockRequest("http://localhost:3000/api/lookup?email=clean@example.com");
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const json = await res.json();
+    expect(json.summary.breach_count).toBe(0);
+    expect(json.summary.possible_accounts).toBe(0);
+    expect(json.hints).toEqual([]);
+  });
+
+  it("returns 429 when rate limited by provider", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
       status: 429,
@@ -113,32 +119,30 @@ describe("GET /api/lookup", () => {
     expect(json.retry_after).toBe(120);
   });
 
-  it("returns 500 when HIBP rejects key (401 Unauthorized)", async () => {
+  it("returns 502 when provider service errors", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: false,
-      status: 401,
+      status: 500,
     });
 
     const req = createMockRequest("http://localhost:3000/api/lookup?email=test@example.com");
     const res = await GET(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(502);
 
     const json = await res.json();
-    expect(json.error).toBe("auth_error");
+    expect(json.error).toBe("lookup_error");
   });
 
-  it("counts duplicate breaches from the same service/domain as one possible account", async () => {
-    const mockBreaches = [
-      { Name: "Adobe", Domain: "adobe.com", DataClasses: ["Email addresses", "Passwords"] },
-      { Name: "Adobe2", Domain: "adobe.com", DataClasses: ["Email addresses"] },
-      { Name: "SomeForum", Domain: "", DataClasses: ["Usernames"] },
-      { Name: "SomeForum", Domain: "", DataClasses: ["Email addresses"] },
-    ];
+  it("deduplicates case-insensitive service occurrences into unique possible accounts", async () => {
+    const mockResponse = {
+      status: "success",
+      breaches: [["Adobe", "adobe", "SomeForum", "someforum"]],
+    };
 
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => mockBreaches,
+      json: async () => mockResponse,
     });
 
     const req = createMockRequest("http://localhost:3000/api/lookup?email=user@example.com");
@@ -147,6 +151,6 @@ describe("GET /api/lookup", () => {
 
     const json = await res.json();
     expect(json.summary.breach_count).toBe(4);
-    expect(json.summary.possible_accounts).toBe(2); // 1 for adobe.com, 1 for SomeForum
+    expect(json.summary.possible_accounts).toBe(2); // 1 for adobe, 1 for someforum
   });
 });

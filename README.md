@@ -30,16 +30,12 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Demo Emails
+## Verification & Security
 
-| Email | Behaviour |
-|-------|-----------|
-| `test@example.com` | Returns 4 possible accounts |
-| `none@example.com` | Returns no results (clean) |
-| `rate@example.com` | Simulates rate-limit (429) |
-| `fail@example.com` | Simulates send-verification failure |
-
-**Verification code:** Always use `123456` in the demo.
+- ✉️ **Dynamic 6-Digit OTP**: Cryptographically generated per verification request with a 10-minute expiration.
+- 🧪 **Local Development Fallback**: In non-production environments without `RESEND_API_KEY`, the OTP is logged to the server console and provided in the response payload for easy local testing.
+- 🚀 **Production Mode**: In production, `dev_code` is strictly withheld. Delivery is handled via Resend when `RESEND_API_KEY` is configured.
+- 🔒 **One-Time Use**: OTPs are invalidated immediately upon successful verification.
 
 ## Running Tests
 
@@ -47,7 +43,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 npm test
 ```
 
-Tests cover utility functions and key UI components.
+Tests cover utility functions, component rendering, breach lookup route handling, and the end-to-end verification flow.
 
 ## Project Structure
 
@@ -60,9 +56,9 @@ email-footprint/
 │   ├── details/page.tsx      # Full verified account list
 │   ├── privacy/page.tsx      # Privacy policy
 │   └── api/
-│       ├── lookup/route.ts          # GET /api/lookup?email=
-│       ├── send-verification/route.ts # POST /api/send-verification
-│       ├── verify-code/route.ts     # POST /api/verify-code
+│       ├── lookup/route.ts          # GET /api/lookup?email= (XposedOrNot lookup)
+│       ├── send-verification/route.ts # POST /api/send-verification (generate & dispatch OTP)
+│       ├── verify-code/route.ts     # POST /api/verify-code (validate OTP & return accounts)
 │       └── mock-accounts/route.ts   # GET /api/mock-accounts?email=
 ├── components/
 │   ├── SearchBar.tsx
@@ -75,59 +71,40 @@ email-footprint/
 │   ├── Footer.tsx
 │   └── PrivacyBanner.tsx
 ├── lib/
-│   ├── types.ts
-│   └── utils.ts
+│   ├── otpStore.ts           # Server-side in-memory OTP store & validator
+│   ├── types.ts              # TypeScript interfaces
+│   └── utils.ts              # Client session, masking, and formatting utilities
 └── __tests__/
+    ├── components.test.tsx
+    ├── lookup.test.ts
     ├── utils.test.ts
-    └── components.test.tsx
+    └── verification.test.ts
 ```
 
-## Replacing Mocks with Real APIs
+## Breach Data & APIs
 
-All mock API logic lives in `app/api/*/route.ts`. To wire up real backends:
+### 1. Breach Lookup (`/api/lookup`)
+Queries the public [XposedOrNot](https://xposedornot.com) API (`https://api.xposedornot.com/v1/check-email/`) with no API key or subscription needed. It groups breach results into categories (social, ecommerce, gaming, productivity, finance, etc.) and returns a masked count for unverified users.
 
-### 1. `/api/lookup` — Breach lookup
-Replace the mock response with a call to your breach API (e.g. Have I Been Pwned):
+### 2. Email Verification & Dispatch (`/api/send-verification`)
+Generates a secure 6-digit OTP and stores it server-side for 10 minutes. If `RESEND_API_KEY` is set, it dispatches an email via Resend (`https://api.resend.com/emails`). If not set, it operates in developer fallback mode.
 
-```typescript
-// app/api/lookup/route.ts
-const HIBP_KEY = process.env.HIBP_API_KEY!;
-
-const hibpRes = await fetch(
-  `https://haveibeenpwned.com/api/v3/breachedaccount/${encodeURIComponent(email)}`,
-  { headers: { "hibp-api-key": HIBP_KEY, "User-Agent": "EmailFootprint" } }
-);
-// Transform and return
-```
-
-### 2. `/api/send-verification` — Email sending
-Replace with your email provider (SendGrid, Resend, AWS SES):
-
-```typescript
-import { Resend } from "resend";
-const resend = new Resend(process.env.RESEND_API_KEY);
-// Generate and store OTP, then:
-await resend.emails.send({ to: email, subject: "Your code", text: `Code: ${otp}` });
-```
-
-### 3. `/api/verify-code` — OTP verification
-Validate the code against your stored OTP (Redis recommended):
-
-```typescript
-const stored = await redis.get(`otp:${email}`);
-if (stored !== code) return error("invalid_code");
-await redis.del(`otp:${email}`);
-// Return accounts
-```
+### 3. Account Unlock (`/api/verify-code`)
+Verifies the submitted 6-digit OTP. Once validated, it retrieves the email's complete breach record from XposedOrNot, formats each breach into a structured account card with mitigation recommendations, and returns the unlocked account list.
 
 ### Environment Variables
 
-Create a `.env.local` file:
+Create a `.env.local` file based on `.env.local.example`:
 
 ```env
-HIBP_API_KEY=your_key_here
-RESEND_API_KEY=re_your_key_here
+# Optional: Resend email API for delivering verification emails in production
+RESEND_API_KEY=
+
+# Optional: Redis URL for distributed OTP store (defaults to in-memory store)
 REDIS_URL=redis://localhost:6379
+
+# App URL
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 ## Exporting Results
