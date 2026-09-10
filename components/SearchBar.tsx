@@ -1,11 +1,29 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Search, AlertCircle, Loader2, ShieldCheck, Check } from "lucide-react";
 import { cn, validateEmail } from "@/lib/utils";
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (
+        container: string | HTMLElement,
+        params: {
+          sitekey: string;
+          callback: (token: string) => void;
+          "error-callback"?: () => void;
+          "expired-callback"?: () => void;
+          theme?: "light" | "dark" | "auto";
+        }
+      ) => string;
+      reset: (widgetId: string) => void;
+    };
+  }
+}
+
 interface SearchBarProps {
-  onSearch: (email: string) => void;
+  onSearch: (email: string, captchaToken: string) => void;
   loading?: boolean;
   defaultValue?: string;
   className?: string;
@@ -14,9 +32,77 @@ interface SearchBarProps {
 export function SearchBar({ onSearch, loading = false, defaultValue = "", className }: SearchBarProps) {
   const [value, setValue] = useState(defaultValue);
   const [touched, setTouched] = useState(false);
-  const [captchaChecked, setCaptchaChecked] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string>("");
   const [captchaError, setCaptchaError] = useState(false);
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
+
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+  // Dynamically load Cloudflare Turnstile script if site key is configured
+  useEffect(() => {
+    if (!siteKey || typeof window === "undefined") return;
+
+    if (window.turnstile && turnstileContainerRef.current && !widgetIdRef.current) {
+      try {
+        const id = window.turnstile.render(turnstileContainerRef.current, {
+          sitekey: siteKey,
+          theme: "light",
+          callback: (token: string) => {
+            setCaptchaToken(token);
+            setCaptchaError(false);
+          },
+          "expired-callback": () => {
+            setCaptchaToken("");
+          },
+          "error-callback": () => {
+            setCaptchaToken("");
+          },
+        });
+        widgetIdRef.current = id;
+        setTurnstileLoaded(true);
+      } catch {
+        // Fallback to local security verification
+      }
+      return;
+    }
+
+    const scriptId = "cf-turnstile-script";
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.onload = () => {
+        if (window.turnstile && turnstileContainerRef.current && !widgetIdRef.current) {
+          try {
+            const id = window.turnstile.render(turnstileContainerRef.current, {
+              sitekey: siteKey,
+              theme: "light",
+              callback: (token: string) => {
+                setCaptchaToken(token);
+                setCaptchaError(false);
+              },
+              "expired-callback": () => {
+                setCaptchaToken("");
+              },
+              "error-callback": () => {
+                setCaptchaToken("");
+              },
+            });
+            widgetIdRef.current = id;
+            setTurnstileLoaded(true);
+          } catch {
+            // Script loaded but rendering failed
+          }
+        }
+      };
+      document.head.appendChild(script);
+    }
+  }, [siteKey]);
 
   const isInvalid = touched && value.length > 0 && !validateEmail(value);
   const isEmpty = touched && value.length === 0;
@@ -29,26 +115,29 @@ export function SearchBar({ onSearch, loading = false, defaultValue = "", classN
     const isEmailValid = validateEmail(value);
     if (!isEmailValid) {
       inputRef.current?.focus();
-      if (!captchaChecked) {
+      if (!captchaToken) {
         setCaptchaError(true);
       }
       return;
     }
 
-    if (!captchaChecked) {
+    if (!captchaToken) {
       setCaptchaError(true);
       return;
     }
 
     setCaptchaError(false);
-    onSearch(value.trim().toLowerCase());
+    onSearch(value.trim().toLowerCase(), captchaToken);
   };
 
-  const handleCaptchaToggle = () => {
+  const handleFallbackCaptchaToggle = () => {
     if (loading) return;
-    const nextState = !captchaChecked;
-    setCaptchaChecked(nextState);
-    if (nextState) {
+    if (captchaToken) {
+      setCaptchaToken("");
+    } else {
+      // Generate standard dev client token
+      const generatedToken = `dev_token_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      setCaptchaToken(generatedToken);
       setCaptchaError(false);
     }
   };
@@ -56,7 +145,7 @@ export function SearchBar({ onSearch, loading = false, defaultValue = "", classN
   const handleCaptchaKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === " " || e.key === "Enter") {
       e.preventDefault();
-      handleCaptchaToggle();
+      handleFallbackCaptchaToggle();
     }
   };
 
@@ -120,57 +209,65 @@ export function SearchBar({ onSearch, loading = false, defaultValue = "", classN
         )}
       </div>
 
-      {/* 2. Mock CAPTCHA checkbox */}
+      {/* 2. CAPTCHA widget */}
       <div className="space-y-1.5">
-        <div
-          onClick={handleCaptchaToggle}
-          className={cn(
-            "flex items-center justify-between gap-3 rounded-2xl border bg-white/90 px-4 py-3 sm:py-3.5 transition-all duration-150 cursor-pointer select-none",
-            captchaError
-              ? "border-red-400 bg-red-50/20 ring-1 ring-red-400/20"
-              : "border-brand-border hover:border-brand-indigo/50 hover:bg-white"
-          )}
-        >
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCaptchaToggle();
-              }}
-              onKeyDown={handleCaptchaKeyDown}
-              role="checkbox"
-              aria-checked={captchaChecked}
-              aria-label="I'm not a robot"
-              disabled={loading}
-              className={cn(
-                "w-5 h-5 rounded-md border-2 transition-all duration-150 flex items-center justify-center flex-shrink-0",
-                "focus-visible:ring-2 focus-visible:ring-brand-indigo focus-visible:ring-offset-2 outline-none",
-                captchaChecked
-                  ? "border-brand-indigo bg-brand-indigo"
-                  : captchaError
-                  ? "border-red-400 bg-white"
-                  : "border-gray-300 bg-white hover:border-brand-indigo"
-              )}
-            >
-              {captchaChecked && (
-                <Check className="w-3.5 h-3.5 text-white stroke-[3]" aria-hidden="true" />
-              )}
-            </button>
-            <span
-              className="text-xs sm:text-sm text-brand-text font-body font-medium select-none"
-            >
-              I&apos;m not a robot
-            </span>
-          </div>
+        {siteKey && (
+          <div
+            ref={turnstileContainerRef}
+            className={cn("flex justify-center min-h-[65px] transition-all", !turnstileLoaded && "hidden")}
+          />
+        )}
 
-          <div className="flex flex-col items-end opacity-40 select-none pointer-events-none">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-brand-sub font-medium">
-              Security Check
-            </span>
-            <span className="text-[9px] text-brand-sub/70 font-body">Demo Verification</span>
+        {/* Accessible fallback checkbox when Turnstile is not configured or in offline/test environment */}
+        {(!siteKey || !turnstileLoaded) && (
+          <div
+            onClick={handleFallbackCaptchaToggle}
+            className={cn(
+              "flex items-center justify-between gap-3 rounded-2xl border bg-white/90 px-4 py-3 sm:py-3.5 transition-all duration-150 cursor-pointer select-none",
+              captchaError
+                ? "border-red-400 bg-red-50/20 ring-1 ring-red-400/20"
+                : "border-brand-border hover:border-brand-indigo/50 hover:bg-white"
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleFallbackCaptchaToggle();
+                }}
+                onKeyDown={handleCaptchaKeyDown}
+                role="checkbox"
+                aria-checked={Boolean(captchaToken)}
+                aria-label="I'm not a robot"
+                disabled={loading}
+                className={cn(
+                  "w-5 h-5 rounded-md border-2 transition-all duration-150 flex items-center justify-center flex-shrink-0",
+                  "focus-visible:ring-2 focus-visible:ring-brand-indigo focus-visible:ring-offset-2 outline-none",
+                  captchaToken
+                    ? "border-brand-indigo bg-brand-indigo"
+                    : captchaError
+                    ? "border-red-400 bg-white"
+                    : "border-gray-300 bg-white hover:border-brand-indigo"
+                )}
+              >
+                {Boolean(captchaToken) && (
+                  <Check className="w-3.5 h-3.5 text-white stroke-[3]" aria-hidden="true" />
+                )}
+              </button>
+              <span className="text-xs sm:text-sm text-brand-text font-body font-medium select-none">
+                I&apos;m not a robot
+              </span>
+            </div>
+
+            <div className="flex flex-col items-end opacity-40 select-none pointer-events-none">
+              <span className="text-[10px] uppercase font-mono tracking-wider text-brand-sub font-medium">
+                Security Check
+              </span>
+              <span className="text-[9px] text-brand-sub/70 font-body">Verification</span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* CAPTCHA validation error */}
         {captchaError && (
@@ -211,8 +308,9 @@ export function SearchBar({ onSearch, loading = false, defaultValue = "", classN
       {/* Rate limit notice */}
       <p className="pt-1 text-[11px] sm:text-xs text-brand-sub/70 text-center font-body flex items-center justify-center gap-1">
         <ShieldCheck className="w-3.5 h-3.5 inline opacity-70 flex-shrink-0" aria-hidden="true" />
-        <span>Searches are rate-limited to protect the service. Max 5 searches per hour.</span>
+        <span>Searches are rate-limited to protect the service. Max 15 searches per 5 minutes.</span>
       </p>
     </form>
   );
 }
+

@@ -64,9 +64,10 @@ describe("SearchBar", () => {
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(mockSearch).toHaveBeenCalledWith("test@example.com");
+      expect(mockSearch).toHaveBeenCalledWith("test@example.com", expect.stringMatching(/^dev_token_/));
     });
   });
+
 
   it("shows empty-field error if submitted blank", async () => {
     render(<SearchBar onSearch={jest.fn()} />);

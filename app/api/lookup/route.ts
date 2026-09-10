@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { validateEmail } from "@/lib/utils";
+import { verifyCaptchaToken } from "@/lib/captcha";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 function categorizeBreachName(name: string): string {
   const n = (name || "").toLowerCase();
@@ -65,7 +67,30 @@ interface XposedOrNotSuccess {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawEmail = searchParams.get("email");
+  const captchaToken = searchParams.get("captcha_token") || request.headers.get("x-captcha-token");
 
+  // 1. IP Rate limit check for abuse protection
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  const realIp = request.headers.get("x-real-ip");
+  const clientIp = forwardedFor ? forwardedFor.split(",")[0].trim() : realIp || "127.0.0.1";
+
+  const rateCheck = checkRateLimit(clientIp, {
+    maxRequests: 15,
+    windowMs: 5 * 60 * 1000,
+  });
+
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      {
+        error: "rate_limited",
+        message: `Too many searches from your device. Please try again in ${Math.ceil(rateCheck.resetSeconds / 60)} minute(s).`,
+        retry_after: rateCheck.resetSeconds,
+      },
+      { status: 429 }
+    );
+  }
+
+  // 2. Email format validation
   if (!rawEmail) {
     return NextResponse.json(
       { error: "invalid_email", message: "Please provide an email address." },
@@ -82,8 +107,39 @@ export async function GET(request: Request) {
     );
   }
 
+  // 3. Server-side CAPTCHA token verification
+  const captchaResult = await verifyCaptchaToken(captchaToken, clientIp);
+  if (!captchaResult.success) {
+    if (captchaResult.error === "captcha_required") {
+      return NextResponse.json(
+        {
+          error: "captcha_required",
+          message: "Security verification required. Please complete the CAPTCHA before searching.",
+        },
+        { status: 400 }
+      );
+    }
+    if (captchaResult.error === "captcha_timeout") {
+      return NextResponse.json(
+        {
+          error: "captcha_timeout",
+          message: "Security verification timed out. Please try checking the CAPTCHA again.",
+        },
+        { status: 504 }
+      );
+    }
+    return NextResponse.json(
+      {
+        error: "captcha_failed",
+        message: "Security verification failed. Please check the CAPTCHA and try again.",
+      },
+      { status: 400 }
+    );
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
+
 
   try {
     const url = `https://api.xposedornot.com/v1/check-email/${encodeURIComponent(

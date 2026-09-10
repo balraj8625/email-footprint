@@ -15,19 +15,24 @@ export default function HomePage() {
   const { addToast } = useToast();
   const [loading, setLoading] = useState(false);
 
-  const handleSearch = async (email: string) => {
+  const handleSearch = async (email: string, captchaToken?: string) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/lookup?email=${encodeURIComponent(email)}`);
+      const url = `/api/lookup?email=${encodeURIComponent(email)}${captchaToken ? `&captcha_token=${encodeURIComponent(captchaToken)}` : ""}`;
+      const res = await fetch(url);
       const data = await res.json();
 
       if (!res.ok) {
         if (res.status === 429) {
           addToast(
-            `Too many requests — please try after ${Math.ceil((data.retry_after ?? 300) / 60)} minutes.`,
+            `Too many searches — please wait ${Math.ceil((data.retry_after ?? 300) / 60)} minute(s).`,
             "warning",
             6000
           );
+          return;
+        }
+        if (data.error === "captcha_required" || data.error === "captcha_failed") {
+          addToast(data.message ?? "Security verification failed. Please try checking the CAPTCHA again.", "error");
           return;
         }
         addToast(data.message ?? "Something went wrong. Please try again.", "error");
@@ -42,6 +47,7 @@ export default function HomePage() {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="flex flex-col min-h-screen hero-mesh">
