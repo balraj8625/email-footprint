@@ -14,31 +14,52 @@ jest.mock("@/components/ToastProvider", () => ({
 }));
 
 describe("SearchBar", () => {
-  it("renders the email input", () => {
+  it("renders the email input, CAPTCHA, and Check Email button", () => {
     render(<SearchBar onSearch={jest.fn()} />);
     expect(screen.getByPlaceholderText("you@example.com")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /i'm not a robot/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /check email/i })).toBeInTheDocument();
   });
 
   it("shows inline error for invalid email on submit", async () => {
     render(<SearchBar onSearch={jest.fn()} />);
     const input = screen.getByPlaceholderText("you@example.com");
-    const button = screen.getByRole("button", { name: /search email footprint/i });
+    const captcha = screen.getByRole("checkbox", { name: /i'm not a robot/i });
+    const button = screen.getByRole("button", { name: /check email/i });
 
     fireEvent.change(input, { target: { value: "notanemail" } });
+    fireEvent.click(captcha);
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeInTheDocument();
+      expect(screen.getByText(/that doesn't look like a valid email/i)).toBeInTheDocument();
     });
   });
 
-  it("calls onSearch with valid email", async () => {
+  it("shows validation error if CAPTCHA is not checked", async () => {
     const mockSearch = jest.fn();
     render(<SearchBar onSearch={mockSearch} />);
     const input = screen.getByPlaceholderText("you@example.com");
-    const button = screen.getByRole("button", { name: /search email footprint/i });
+    const button = screen.getByRole("button", { name: /check email/i });
 
     fireEvent.change(input, { target: { value: "test@example.com" } });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText(/please check "i'm not a robot" before checking your email/i)).toBeInTheDocument();
+      expect(mockSearch).not.toHaveBeenCalled();
+    });
+  });
+
+  it("calls onSearch with valid email when CAPTCHA is checked", async () => {
+    const mockSearch = jest.fn();
+    render(<SearchBar onSearch={mockSearch} />);
+    const input = screen.getByPlaceholderText("you@example.com");
+    const captcha = screen.getByRole("checkbox", { name: /i'm not a robot/i });
+    const button = screen.getByRole("button", { name: /check email/i });
+
+    fireEvent.change(input, { target: { value: "test@example.com" } });
+    fireEvent.click(captcha);
     fireEvent.click(button);
 
     await waitFor(() => {
@@ -48,12 +69,12 @@ describe("SearchBar", () => {
 
   it("shows empty-field error if submitted blank", async () => {
     render(<SearchBar onSearch={jest.fn()} />);
-    const button = screen.getByRole("button", { name: /search email footprint/i });
+    const button = screen.getByRole("button", { name: /check email/i });
 
     fireEvent.click(button);
 
     await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent(/enter your email/i);
+      expect(screen.getByText(/please enter your email address/i)).toBeInTheDocument();
     });
   });
 });

@@ -281,7 +281,7 @@ function ResultsContent() {
       >
         <div className="space-y-3">
           <p>Email Footprint queries publicly available breach datasets and other open data sources to infer which services may be associated with your email address.</p>
-          <p>Sources include breach feeds such as <strong>Have I Been Pwned</strong> and similar public datasets. Data is cross-referenced by email domain and username patterns.</p>
+          <p>Sources include breach feeds such as <strong>XposedOrNot</strong> and similar public datasets. Data is cross-referenced by email domain and username patterns.</p>
           <p><strong>Important:</strong> All results are probabilistic inferences. A &quot;Possible&quot; result means your email appeared in breach data associated with a service — it does not confirm you have an active account there.</p>
           <p className="text-xs text-brand-sub/70">This service never requests your password, and results are only shown within your current session.</p>
         </div>

@@ -52,7 +52,7 @@ export function Footer() {
               </p>
               <div className="flex flex-col gap-1">
                 <a
-                  href="https://github.com"
+                  href="https://github.com/balraj8625/email-footprint"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-brand-sub hover:text-brand-indigo transition-colors font-body flex items-center gap-1"
@@ -61,12 +61,12 @@ export function Footer() {
                   Source Code
                 </a>
                 <a
-                  href="https://haveibeenpwned.com"
+                  href="https://xposedornot.com"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-brand-sub hover:text-brand-indigo transition-colors font-body"
                 >
-                  HaveIBeenPwned
+                  XposedOrNot
                 </a>
               </div>
             </div>

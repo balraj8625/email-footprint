@@ -100,12 +100,12 @@ export default function HomePage() {
           <p className="text-center text-xs text-brand-sub/70 font-body leading-relaxed">
             Breach data sourced from public feeds including{" "}
             <a
-              href="https://haveibeenpwned.com"
+              href="https://xposedornot.com"
               target="_blank"
               rel="noopener noreferrer"
               className="underline underline-offset-2 hover:text-brand-indigo transition-colors inline-flex items-center gap-0.5"
             >
-              HaveIBeenPwned
+              XposedOrNot
               <ExternalLink className="w-2.5 h-2.5" aria-hidden="true" />
             </a>
             . Results are inferences only. This app never requests your password.

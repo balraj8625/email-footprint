@@ -167,7 +167,7 @@ export function ResultCard({ account, index = 0 }: ResultCardProps) {
             <strong className="text-brand-text">Recommendation:</strong> {account.notes}
           </p>
           <div className="mt-3 pt-3 border-t border-brand-border text-brand-sub/70 text-xs">
-            Results are sourced from publicly known breach datasets (e.g. Have I Been Pwned) and
+            Results are sourced from publicly known breach datasets (e.g. XposedOrNot) and
             other public data sources. They are inferences only. This app never requests or stores
             your password.
           </div>

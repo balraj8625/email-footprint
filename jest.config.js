@@ -8,7 +8,8 @@ const customJestConfig = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
   },
-  testMatch: ["**/__tests__/**/*.{ts,tsx}"],
+  testMatch: ["<rootDir>/__tests__/**/*.{ts,tsx}"],
+  testPathIgnorePatterns: ["/node_modules/", "/\\.kilo/"],
   transform: {
     "^.+\\.(t|j)sx?$": ["babel-jest", { presets: ["next/babel"] }],
   },
