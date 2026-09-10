@@ -6,6 +6,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SearchBar } from "@/components/SearchBar";
 import { ResultCard } from "@/components/ResultCard";
 import { PrivacyBanner } from "@/components/PrivacyBanner";
+import { SummaryLoadingSkeleton } from "@/components/LoadingSkeleton";
 
 // Mock ToastProvider for components that need it
 jest.mock("@/components/ToastProvider", () => ({
@@ -126,5 +127,13 @@ describe("PrivacyBanner", () => {
     await waitFor(() => {
       expect(screen.queryByRole("note")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("SummaryLoadingSkeleton", () => {
+  it("renders loading status with public breach text", () => {
+    render(<SummaryLoadingSkeleton />);
+    expect(screen.getByRole("status")).toBeInTheDocument();
+    expect(screen.getByText(/querying public breach datasets/i)).toBeInTheDocument();
   });
 });
