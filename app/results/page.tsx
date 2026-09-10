@@ -4,21 +4,42 @@ import React, { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ShieldAlert, CheckCircle2, ArrowRight, RefreshCw,
-  Database, Users, ShoppingBag, MessageSquare, Download, Info
+  Database, Users, ShoppingBag, MessageSquare, Download, Info, ShieldCheck, KeyRound,
+  ExternalLink, ChevronDown, ChevronUp, Lock, CheckCircle
 } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { SummaryLoadingSkeleton } from "@/components/LoadingSkeleton";
 import { Modal, InfoTooltipButton } from "@/components/Modal";
 import { useToast } from "@/components/ToastProvider";
-import { loadSession, saveSession, maskEmail, getCategoryIcon, getCategoryLabel, downloadJSON } from "@/lib/utils";
+import {
+  loadSession, saveSession, maskEmail, getCategoryIcon, getCategoryLabel,
+  getCategoryRecommendation, categorizeBreachName, getSiteUrl, downloadJSON
+} from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { LookupSummary } from "@/lib/types";
 
-const categoryIcons: Record<string, React.ReactNode> = {
-  social: <Users className="w-4 h-4" aria-hidden="true" />,
-  ecommerce: <ShoppingBag className="w-4 h-4" aria-hidden="true" />,
-  forums: <MessageSquare className="w-4 h-4" aria-hidden="true" />,
+const categoryColors: Record<string, string> = {
+  social: "bg-violet-50 text-violet-700 border-violet-200",
+  ecommerce: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  forums: "bg-amber-50 text-amber-700 border-amber-200",
+  gaming: "bg-green-50 text-green-700 border-green-200",
+  productivity: "bg-blue-50 text-blue-700 border-blue-200",
+  streaming: "bg-pink-50 text-pink-700 border-pink-200",
+  finance: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  travel: "bg-orange-50 text-orange-700 border-orange-200",
+  health: "bg-rose-50 text-rose-700 border-rose-200",
+  other: "bg-gray-50 text-gray-600 border-gray-200",
+};
+
+const siteInitials: Record<string, { bg: string; text: string }> = {
+  LinkedIn: { bg: "#0A66C2", text: "Li" },
+  "Twitter / X": { bg: "#000000", text: "X" },
+  Twitter: { bg: "#000000", text: "X" },
+  Adobe: { bg: "#FF0000", text: "Ae" },
+  Kickstarter: { bg: "#05CE78", text: "Ks" },
+  Dropbox: { bg: "#0061FF", text: "Db" },
+  Canva: { bg: "#00C4CC", text: "Ca" },
 };
 
 function ResultsContent() {
@@ -31,6 +52,7 @@ function ResultsContent() {
   const [loading, setLoading] = useState(true);
   const [errorState, setErrorState] = useState<{ message: string; isRateLimit?: boolean } | null>(null);
   const [infoOpen, setInfoOpen] = useState(false);
+  const [expandedBreaches, setExpandedBreaches] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const session = loadSession();
@@ -115,6 +137,13 @@ function ResultsContent() {
       `email-footprint-summary-${Date.now()}.json`
     );
     addToast("Summary report exported as JSON.", "success");
+  };
+
+  const toggleExpand = (breachKey: string) => {
+    setExpandedBreaches((prev) => ({
+      ...prev,
+      [breachKey]: !prev[breachKey],
+    }));
   };
 
   if (loading) {
@@ -202,6 +231,17 @@ function ResultsContent() {
   const totalBreaches = data.summary.breach_count;
   const possibleAccounts = data.summary.possible_accounts;
   const hasResults = possibleAccounts > 0 || totalBreaches > 0;
+
+  // Derive known breach records from verified/mock session data if available
+  const sessionData = typeof window !== "undefined" ? loadSession() : null;
+  const accountsData = (sessionData?.accounts as Array<{
+    site: string;
+    siteUrl?: string;
+    category?: string;
+    discoverySource?: string;
+    notes?: string;
+    confidence?: string;
+  }>) || [];
 
   // Risk profile computation
   const riskStatus =
@@ -312,7 +352,123 @@ function ResultsContent() {
                 <p className="text-[11px] text-brand-sub font-body leading-tight">Possible accounts</p>
               </div>
             </div>
+
+            <div className="pt-2 border-t border-brand-border/60">
+              <p className="text-[11px] text-brand-sub font-body leading-relaxed">
+                <strong>Understanding results:</strong> &quot;Breaches found&quot; denotes exposure incidents in public datasets. &quot;Possible accounts&quot; indicates unique services where your email was indexed, not confirmed active logins.
+              </p>
+            </div>
           </div>
+
+          {/* Where your email appeared / Breached Organizations (when accounts data is present in session) */}
+          {accountsData.length > 0 && (
+            <div className="bg-white rounded-2xl border border-brand-border p-6 shadow-card space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-bold text-brand-text font-display">
+                    Where your email appeared
+                  </h2>
+                  <p className="text-xs text-brand-sub font-body mt-0.5">
+                    Specific breach records and organizations indexed for this email
+                  </p>
+                </div>
+                <span className="text-[11px] bg-red-50 text-red-700 px-2.5 py-1 rounded-lg font-mono font-semibold border border-red-200">
+                  {accountsData.length} {accountsData.length === 1 ? "source" : "sources"}
+                </span>
+              </div>
+
+              <div className="space-y-3" aria-label="Breached organizations list">
+                {accountsData.map((item, idx) => {
+                  const cat = item.category || categorizeBreachName(item.site);
+                  const isExpanded = !!expandedBreaches[item.site];
+                  const initials = siteInitials[item.site] ?? { bg: "#4F46E5", text: item.site.substring(0, 2).toUpperCase() };
+                  const siteUrl = item.siteUrl || getSiteUrl(item.site);
+
+                  return (
+                    <div
+                      key={`${item.site}-${idx}`}
+                      className="bg-brand-bg/50 rounded-xl border border-brand-border p-4 transition-all duration-150 hover:border-brand-indigo/40"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-display font-bold text-white text-xs shadow-xs"
+                            style={{ background: initials.bg }}
+                            aria-hidden="true"
+                          >
+                            {initials.text}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h3 className="text-sm font-bold text-brand-text font-display">
+                                {item.site}
+                              </h3>
+                              <span className={cn("text-[10px] px-2 py-0.5 rounded-full border font-mono font-medium", categoryColors[cat] ?? categoryColors.other)}>
+                                {getCategoryLabel(cat)}
+                              </span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-mono font-medium">
+                                Possible account
+                              </span>
+                            </div>
+                            <p className="text-xs text-brand-sub font-mono mt-1">
+                              {item.discoverySource || `Public Breach — ${item.site}`}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          {siteUrl && (
+                            <a
+                              href={siteUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`Visit information for ${item.site}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-brand-border bg-white text-brand-sub hover:text-brand-indigo hover:border-brand-indigo transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                              <span className="hidden sm:inline">Info</span>
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleExpand(item.site)}
+                            aria-expanded={isExpanded}
+                            aria-label={`Toggle details for ${item.site}`}
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border border-brand-border bg-white text-brand-sub hover:text-brand-text transition-colors"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <span className="hidden sm:inline">Less</span>
+                                <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                              </>
+                            ) : (
+                              <>
+                                <span className="hidden sm:inline">Details</span>
+                                <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expandable details */}
+                      {isExpanded && (
+                        <div className="mt-3 pt-3 border-t border-brand-border/60 text-xs text-brand-sub font-body space-y-2">
+                          <p className="leading-relaxed">
+                            <strong className="text-brand-text">Exposed context:</strong> {item.notes || getCategoryRecommendation(cat)}
+                          </p>
+                          <div className="flex items-center gap-2 pt-1 text-[11px] text-brand-sub/80 font-mono">
+                            <Lock className="w-3 h-3 text-amber-500" aria-hidden="true" />
+                            <span>Inference from open public records — verify account credentials directly.</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Account Categories Section */}
           <div className="bg-white rounded-2xl border border-brand-border p-6 shadow-card space-y-4">
@@ -330,30 +486,94 @@ function ResultsContent() {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-3">
               {data.hints.map((hint) => (
                 <div
                   key={hint.category}
-                  className="flex items-center justify-between bg-brand-bg/60 rounded-xl px-4 py-3 border border-brand-border hover:border-brand-indigo/30 transition-colors"
+                  className="bg-brand-bg/60 rounded-xl p-3.5 sm:p-4 border border-brand-border hover:border-brand-indigo/30 transition-colors space-y-2.5"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl flex-shrink-0 select-none" aria-hidden="true">
-                      {getCategoryIcon(hint.category)}
-                    </span>
-                    <div>
-                      <p className="text-xs font-bold text-brand-text font-body">
-                        {getCategoryLabel(hint.category)}
-                      </p>
-                      <p className="text-[11px] text-brand-sub/80 font-body">
-                        Associated breach records
-                      </p>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl flex-shrink-0 select-none" aria-hidden="true">
+                        {getCategoryIcon(hint.category)}
+                      </span>
+                      <div>
+                        <p className="text-xs font-bold text-brand-text font-body">
+                          {getCategoryLabel(hint.category)}
+                        </p>
+                        <p className="text-[11px] text-brand-sub/80 font-body">
+                          Associated breach records
+                        </p>
+                      </div>
                     </div>
+                    <span className="text-xs font-bold font-mono text-brand-indigo bg-white px-2.5 py-1 rounded-lg border border-brand-border shadow-2xs">
+                      {hint.count.toLocaleString()} {hint.count === 1 ? "breach" : "breaches"}
+                    </span>
                   </div>
-                  <span className="text-xs font-bold font-mono text-brand-indigo bg-white px-2.5 py-1 rounded-lg border border-brand-border shadow-2xs">
-                    {hint.count.toLocaleString()}
-                  </span>
+
+                  <div className="flex items-start gap-2 pt-1 border-t border-brand-border/60">
+                    <KeyRound className="w-3.5 h-3.5 text-brand-indigo flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <p className="text-[11px] text-brand-sub font-body leading-relaxed">
+                      <strong className="text-brand-text font-medium">Recommended action:</strong> {getCategoryRecommendation(hint.category)}
+                    </p>
+                  </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* What should I do? Security Guidance Section */}
+          <div className="bg-white rounded-2xl border border-brand-border p-6 shadow-card space-y-4">
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-brand-indigo flex-shrink-0" aria-hidden="true" />
+              <h2 className="text-sm font-bold text-brand-text font-display">
+                What should I do?
+              </h2>
+            </div>
+            <p className="text-xs text-brand-sub font-body">
+              Take these immediate, practical steps to protect accounts and prevent credential stuffing:
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-brand-bg/60 border border-brand-border">
+                <CheckCircle className="w-4 h-4 text-brand-indigo flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-brand-text font-body">Use unique passwords</p>
+                  <p className="text-[11px] text-brand-sub font-body leading-relaxed">
+                    Never reuse passwords between personal, social, and financial accounts.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-brand-bg/60 border border-brand-border">
+                <CheckCircle className="w-4 h-4 text-brand-indigo flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-brand-text font-body">Enable Two-Factor Auth (2FA)</p>
+                  <p className="text-[11px] text-brand-sub font-body leading-relaxed">
+                    Add authenticator apps or security keys wherever multi-factor is available.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-brand-bg/60 border border-brand-border">
+                <CheckCircle className="w-4 h-4 text-brand-indigo flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-brand-text font-body">Change reused passwords</p>
+                  <p className="text-[11px] text-brand-sub font-body leading-relaxed">
+                    Rotate passwords on active services that previously shared the same credentials.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-brand-bg/60 border border-brand-border">
+                <CheckCircle className="w-4 h-4 text-brand-indigo flex-shrink-0 mt-0.5" aria-hidden="true" />
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-brand-text font-body">Review affected accounts</p>
+                  <p className="text-[11px] text-brand-sub font-body leading-relaxed">
+                    Audit linked third-party permissions and recent session login activity.
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -437,6 +657,18 @@ function ResultsContent() {
             <p className="text-xs text-brand-sub leading-relaxed font-body">
               While your email does not appear in public breach feeds, this check covers indexed public datasets and does not guarantee that private accounts or unindexed databases have never been exposed. Using unique passwords for each service remains essential.
             </p>
+          </div>
+
+          {/* What should I do? Clean state tips */}
+          <div className="bg-brand-bg rounded-2xl border border-brand-border p-4 max-w-lg mx-auto text-left space-y-2">
+            <p className="text-xs font-semibold text-brand-text font-body">
+              Recommended best practices
+            </p>
+            <ul className="text-xs text-brand-sub font-body space-y-1 list-disc list-inside">
+              <li>Use a password manager to generate unique passwords</li>
+              <li>Enable 2FA across important email and banking services</li>
+              <li>Periodically re-scan your email for newly indexed breaches</li>
+            </ul>
           </div>
 
           <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
